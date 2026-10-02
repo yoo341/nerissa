@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nerissa · Aquatic Disease Radar</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12403f">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Nerissa">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--deep:#12403f;--lagoon:#2e7d7a;--pearl:#f6f1f4;--blush:#e8c9d6;--coral:#d4456b;--ink:#1d2b2a;--line:#d9cdd3;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:Figtree,system-ui,sans-serif;background:var(--pearl);color:var(--ink);line-height:1.5}
+header{padding-top:max(1.1rem,env(safe-area-inset-top))!important;background:var(--deep);color:var(--pearl);padding:1.1rem 1.5rem;display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;align-items:baseline}
+h1{font-family:Fraunces,Georgia,serif;font-size:2rem;margin:0;font-weight:700;letter-spacing:.01em}
+header p{margin:0;color:var(--blush);font-size:.95rem}
+main{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:1rem;padding:1rem;max-width:1400px;margin:auto}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem}
+h2{font-family:Fraunces,Georgia,serif;font-size:1.15rem;margin:0 0 .6rem;color:var(--deep)}
+label{display:block;font-size:.85rem;font-weight:600;margin:.55rem 0 .15rem}
+input,select{width:100%;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+button{font:inherit;font-weight:600;border:0;border-radius:999px;padding:.55rem 1.1rem;cursor:pointer;background:var(--coral);color:#fff}
+button.alt{background:var(--blush);color:var(--deep)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--lagoon);outline-offset:1px}
+.btns{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.8rem}
+#map{height:520px;border-radius:10px}
+.right{display:flex;flex-direction:column;gap:1rem}
+.stats{display:flex;flex-wrap:wrap;gap:1.2rem;margin-bottom:.6rem}
+.stats b{font-family:Fraunces,serif;font-size:1.6rem;display:block;color:var(--deep)}
+.stats span{font-size:.8rem}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid var(--line)}
+.wrap{overflow-x:auto}
+.hot{color:var(--coral);font-weight:600}
+.note{font-size:.8rem;color:#5b6b6a}
+.legend{display:flex;gap:1rem;font-size:.8rem;margin-top:.5rem;flex-wrap:wrap}
+.dot{display:inline-block;width:.8rem;height:.8rem;border-radius:50%;margin-right:.3rem;vertical-align:middle}
+</style>
+</head>
+<body>
+<header>
+<h1>Nerissa</h1>
+<p>Aquatic Disease Radar: log tilapia mortality, see where it clusters, and check which shared water sources are involved.</p>
+<button id="install" hidden>Install Nerissa</button>
+<span id="ios" class="note" hidden style="color:var(--blush)">To install on iPhone: tap Share, then Add to Home Screen.</span>
+</header>
+<main>
+<div class="right">
+<section>
+<h2>Log a mortality event</h2>
+<form id="f" onsubmit="return false">
+<label for="farm">Farm name or ID</label><input id="farm" required>
+<div class="row">
+<div><label for="lat">Latitude</label><input id="lat" type="number" step="any" required></div>
+<div><label for="lng">Longitude</label><input id="lng" type="number" step="any" required></div>
+</div>
+<div class="btns"><button type="button" class="alt" id="gps">Use my location</button></div>
+<p class="note">Or click the map to set the location.</p>
+<label for="water">Water source (shared sources get the same name)</label><input id="water" placeholder="e.g. Densu River inlet A" required>
+<div class="row">
+<div><label for="stocked">Fish stocked</label><input id="stocked" type="number" min="1" required></div>
+<div><label for="dead">Fish dead</label><input id="dead" type="number" min="0" required></div>
+</div>
+<div class="row">
+<div><label for="date">Date</label><input id="date" type="date" required></div>
+<div><label for="cause">Suspected cause</label>
+<select id="cause"><option>Unknown</option><option>Bacterial (e.g. Streptococcus)</option><option>Viral (e.g. TiLV)</option><option>Parasitic</option><option>Low oxygen</option><option>Poor water quality</option></select></div>
+</div>
+<div class="btns"><button id="add">Save event</button><button type="button" class="alt" id="demo">Load demo data</button></div>
+</form>
+</section>
+<section>
+<h2>Cluster settings</h2>
+<label for="rad">Neighbour distance: <span id="radv">5</span> km</label>
+<input id="rad" type="range" min="1" max="30" value="5">
+<p class="note">Farms within this distance, or on the same water source, count as neighbours.</p>
+</section>
+</div>
+
+<div class="right">
+<section>
+<h2>Mortality map</h2>
+<div class="stats"><div><b id="sN">0</b><span>farms</span></div><div><b id="sM">0%</b><span>average mortality</span></div><div><b id="sH">0</b><span>hotspot farms</span></div></div>
+<div id="map"></div>
+<div class="legend"><span><i class="dot" style="background:#2e7d7a"></i>under 10%</span><span><i class="dot" style="background:#e0a030"></i>10–30%</span><span><i class="dot" style="background:#d4456b"></i>over 30%</span><span><i class="dot" style="border:3px solid #12403f;background:none"></i>hotspot</span></div>
+</section>
+<section>
+<h2>Shared water sources</h2>
+<div class="wrap"><table id="wt"><thead><tr><th>Water source</th><th>Farms</th><th>Mortality</th><th>Hotspot farms</th></tr></thead><tbody></tbody></table></div>
+<p class="note">Sources shared by several farms with high mortality are the first places to inspect.</p>
+</section>
+<section>
+<h2>Events</h2>
+<div class="wrap"><table id="et"><thead><tr><th>Farm</th><th>Date</th><th>Water</th><th>Dead / stocked</th><th>Mortality</th><th>Cause</th><th>Hotspot</th><th></th></tr></thead><tbody></tbody></table></div>
+<div class="btns"><button class="alt" id="csv">Download CSV</button><button class="alt" id="imp">Import CSV</button><button class="alt" id="sync" hidden>Sync to shared database</button><input type="file" id="file" accept=".csv,text/csv" hidden><button class="alt" id="clear">Clear all</button></div>
+<p class="note">Hotspots are a screening flag (local mean against the overall mean, z above 1.96, at least 3 neighbours). Confirm with Getis-Ord Gi* or SaTScan before publishing. Data stays in this browser.</p>
+</section>
+</div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="config.js"></script>
+<script>
+const KEY='nerissa-events-v1';
+let events=[];
+try{events=JSON.parse((localStorage.getItem(KEY)||localStorage.getItem('naia-events-v1')))||[]}catch(e){}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+events.forEach(e=>{if(!e.uid)e.uid=uid()});
+const $=id=>document.getElementById(id);
+const map=L.map('map').setView([6.1,-0.45],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);
+const layer=L.layerGroup().addTo(map);
+let pick=null;
+map.on('click',e=>{$('lat').value=e.latlng.lat.toFixed(5);$('lng').value=e.latlng.lng.toFixed(5);
+ if(pick)map.removeLayer(pick);pick=L.marker(e.latlng).addTo(map)});
+$('gps').onclick=()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{$('lat').value=p.coords.latitude.toFixed(5);$('lng').value=p.coords.longitude.toFixed(5)},()=>alert('Location unavailable. Click the map instead.')):alert('Location is not supported on this device.');
+$('rad').oninput=()=>{$('radv').textContent=$('rad').value;render()};
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(events))}catch(e){}};
+const rate=e=>e.dead/e.stocked*100;
+const km=(a,b)=>{const R=6371,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lng-a.lng)*r;
+ const x=Math.sin(dl/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(x))};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+$('add').onclick=()=>{
+ const f=$('f');if(!f.reportValidity())return;
+ const e={farm:$('farm').value.trim(),lat:+$('lat').value,lng:+$('lng').value,water:$('water').value.trim(),
+  stocked:+$('stocked').value,dead:+$('dead').value,date:$('date').value,cause:$('cause').value,uid:uid()};
+ if(e.dead>e.stocked){alert('Dead fish cannot exceed fish stocked.');return}
+ events.push(e);save();f.reset();if(pick){map.removeLayer(pick);pick=null}render();push([e]);
+};
+$('clear').onclick=()=>{if(confirm('Delete all events from this browser?')){events=[];save();render()}};
+$('demo').onclick=()=>{
+ const W=['Densu inlet A','Densu inlet B','Pra stream','Volta lake zone 1'];
+ const base=[[6.10,-0.42,0],[6.12,-0.40,0],[6.09,-0.44,0],[6.13,-0.43,0],[6.11,-0.41,0],
+  [6.35,-0.20,1],[6.33,-0.22,1],[6.30,-0.18,1],[6.02,-0.75,2],[6.05,-0.78,2],[6.20,0.05,3],[6.22,0.08,3]];
+ const hi=[.42,.38,.5,.35,.45,.06,.08,.05,.12,.09,.07,.1];
+ base.forEach((b,i)=>{const st=800+Math.round(Math.random()*600);
+  events.push({farm:'Demo farm '+(i+1),lat:b[0]+(Math.random()-.5)*.02,lng:b[1]+(Math.random()-.5)*.02,water:W[b[2]],
+  stocked:st,dead:Math.round(st*(hi[i]+(Math.random()-.5)*.04)),date:'2026-09-'+String(5+i).padStart(2,'0'),cause:i<5?'Bacterial (e.g. Streptococcus)':'Unknown',uid:uid()})});
+ save();render();map.setView([6.15,-0.3],9);
+};
+
+function analyse(){
+ const n=events.length;if(!n)return{z:[],hot:[]};
+ const r=events.map(rate),mu=r.reduce((a,b)=>a+b,0)/n;
+ const sd=Math.sqrt(r.reduce((a,b)=>a+(b-mu)**2,0)/Math.max(1,n-1));
+ const R=+$('rad').value;
+ const hot=events.map((e,i)=>{
+  const nb=events.map((o,j)=>j).filter(j=>j===i||km(e,events[j])<=R||events[j].water.toLowerCase()===e.water.toLowerCase());
+  if(nb.length<3||sd===0)return false;
+  const lm=nb.reduce((a,j)=>a+r[j],0)/nb.length;
+  return (lm-mu)/(sd/Math.sqrt(nb.length))>1.96&&lm>mu;
+ });
+ return{hot,mu};
+}
+
+function render(){
+ layer.clearLayers();
+ const{hot=[],mu=0}=analyse();
+ const tb=$('et').tBodies[0];tb.innerHTML='';
+ events.forEach((e,i)=>{
+  const m=rate(e),col=m>30?'#d4456b':m>=10?'#e0a030':'#2e7d7a';
+  L.circleMarker([e.lat,e.lng],{radius:7+Math.min(m,50)/5,color:hot[i]?'#12403f':col,weight:hot[i]?4:1,fillColor:col,fillOpacity:.75})
+   .bindPopup(`<b>${esc(e.farm)}</b><br>${esc(e.water)}<br>${e.dead} / ${e.stocked} dead (${m.toFixed(1)}%)<br>${esc(e.cause)}${hot[i]?'<br><b>Hotspot</b>':''}`).addTo(layer);
+  tb.insertAdjacentHTML('beforeend',`<tr><td>${esc(e.farm)}</td><td>${esc(e.date)}</td><td>${esc(e.water)}</td><td>${e.dead} / ${e.stocked}</td><td>${m.toFixed(1)}%</td><td>${esc(e.cause)}</td><td class="${hot[i]?'hot':''}">${hot[i]?'Yes':'No'}</td><td><button class="alt" data-del="${i}" aria-label="Delete ${esc(e.farm)}">Delete</button></td></tr>`);
+ });
+ $('sN').textContent=events.length;
+ $('sM').textContent=mu.toFixed(1)+'%';
+ $('sH').textContent=hot.filter(Boolean).length;
+ const g={};
+ events.forEach((e,i)=>{const k=e.water.toLowerCase();(g[k]=g[k]||{name:e.water,s:0,d:0,n:0,h:0});
+  g[k].s+=e.stocked;g[k].d+=e.dead;g[k].n++;if(hot[i])g[k].h++});
+ const wb=$('wt').tBodies[0];wb.innerHTML='';
+ Object.values(g).sort((a,b)=>b.d/b.s-a.d/a.s).forEach(x=>wb.insertAdjacentHTML('beforeend',
+  `<tr><td>${esc(x.name)}</td><td>${x.n}</td><td>${(x.d/x.s*100).toFixed(1)}%</td><td class="${x.h?'hot':''}">${x.h}</td></tr>`));
+ if(events.length&&!pick)map.fitBounds(events.map(e=>[e.lat,e.lng]),{maxZoom:11,padding:[30,30]});
+}
+
+$('csv').onclick=()=>{
+ const h=['farm','lat','lng','water','stocked','dead','date','cause'];
+ const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+ const t=[h.join(',')].concat(events.map(e=>h.map(k=>q(e[k])).join(','))).join('\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download='nerissa-events.csv';a.click();
+};
+$('et').onclick=ev=>{const b=ev.target.closest('[data-del]');if(!b)return;
+ const e=events[+b.dataset.del];if(confirm('Delete the event for '+e.farm+'?')){events.splice(+b.dataset.del,1);save();render()}};
+// CSV import
+function parseCSV(t){const rows=[];let r=[],c='',q=false;
+ for(let i=0;i<t.length;i++){const ch=t[i];
+  if(q){if(ch==='"'){if(t[i+1]==='"'){c+='"';i++}else q=false}else c+=ch}
+  else if(ch==='"')q=true;else if(ch===','){r.push(c);c=''}
+  else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;r.push(c);c='';if(r.some(x=>x!==''))rows.push(r);r=[]}
+  else c+=ch}
+ if(c!==''||r.length){r.push(c);rows.push(r)}return rows}
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=async()=>{
+ const f=$('file').files[0];if(!f)return;
+ const rows=parseCSV((await f.text()).replace(/^\uFEFF/,''));
+ const h=rows.shift().map(x=>x.trim().toLowerCase());
+ const need=['farm','lat','lng','water','stocked','dead'],miss=need.filter(k=>!h.includes(k));
+ if(miss.length){alert('Missing columns: '+miss.join(', ')+'. Required: farm, lat, lng, water, stocked, dead. Optional: date, cause.');$('file').value='';return}
+ let ok=0,bad=0;const added=[];
+ rows.forEach(r=>{const o={};h.forEach((k,i)=>o[k]=(r[i]||'').trim());
+  const e={farm:o.farm,lat:+o.lat,lng:+o.lng,water:o.water,stocked:+o.stocked,dead:+o.dead,date:o.date||'',cause:o.cause||'Unknown',uid:o.uid||uid()};
+  if(!e.farm||!e.water||isNaN(e.lat)||isNaN(e.lng)||!(e.stocked>0)||isNaN(e.dead)||e.dead>e.stocked||Math.abs(e.lat)>90||Math.abs(e.lng)>180){bad++;return}
+  if(events.some(x=>x.uid===e.uid)){bad++;return}
+  events.push(e);added.push(e);ok++});
+ save();render();push(added);$('file').value='';
+ alert(ok+' events imported'+(bad?', '+bad+' skipped (invalid or duplicate rows).':'.'));
+};
+// Optional Supabase sync
+const CF=window.NERISSA_CONFIG||{},SB=CF.supabaseUrl&&CF.supabaseKey;
+const H={apikey:CF.supabaseKey,Authorization:'Bearer '+CF.supabaseKey,'Content-Type':'application/json'};
+async function push(list){if(!SB||!list.length)return;
+ try{await fetch(CF.supabaseUrl+'/rest/v1/events?on_conflict=uid',{method:'POST',headers:{...H,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(list)})}catch(e){}}
+async function sync(){
+ try{await push(events);
+  const r=await fetch(CF.supabaseUrl+'/rest/v1/events?select=*',{headers:H});if(!r.ok)throw 0;
+  const rem=await r.json();let n=0;
+  rem.forEach(x=>{if(!events.some(e=>e.uid===x.uid)){events.push({farm:x.farm,lat:+x.lat,lng:+x.lng,water:x.water,stocked:+x.stocked,dead:+x.dead,date:x.date||'',cause:x.cause||'Unknown',uid:x.uid});n++}});
+  save();render();alert('Synced. '+n+' new events received.')}
+ catch(e){alert('Sync failed. Check your connection and the Supabase settings in config.js.')}}
+if(SB){$('sync').hidden=false;$('sync').onclick=sync}
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+let dp=null;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();dp=e;$('install').hidden=false});
+$('install').onclick=async()=>{if(!dp)return;dp.prompt();await dp.userChoice;dp=null;$('install').hidden=true};
+addEventListener('appinstalled',()=>{$('install').hidden=true});
+if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!navigator.standalone)$('ios').hidden=false;
+</script>
+</body>
+</html>
